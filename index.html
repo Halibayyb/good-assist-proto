@@ -14,11 +14,9 @@
     <button class="live-btn" id="liveBtn" type="button">▶ Start live match</button>
     <span class="clock" id="clock" aria-label="Match clock">0'</span>
     <span class="score" id="score">Home 0 – 0 Away</span>
-    <div class="progress" aria-hidden="true"><div id="progress"></div></div>
   </div>
 
-  <p class="jump">Jump to goal</p>
-  <div class="picker" id="picker"></div>
+  <div class="timeline" id="timeline" role="group" aria-label="Match timeline: select a goal"></div>
 
   <div class="stage">
     <div class="views" id="views">
@@ -180,7 +178,11 @@
     </div>
 
     <aside class="panel">
-      <button class="play-btn" id="playBtn" type="button">▶ Play the moment</button>
+      <div class="panel-nav">
+        <button class="nav-btn" id="prevBtn" type="button" aria-label="Previous goal">‹</button>
+        <button class="play-btn" id="playBtn" type="button">▶ Play the moment</button>
+        <button class="nav-btn" id="nextBtn" type="button" aria-label="Next goal">›</button>
+      </div>
       <p id="status"></p>
       <ol class="ticker" id="ticker" aria-live="polite" aria-label="Match events"></ol>
       <div id="result"></div>

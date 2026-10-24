@@ -41,6 +41,7 @@ export function createLive({ events, onEvent, onTick, onGoal, onState }) {
   return {
     get running() { return running; },
     get minute() { return minute; },
+    get started() { return started; },
     start() {
       if (minute >= 90) this.restart();
       running = started = true; last = performance.now();

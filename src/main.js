@@ -1,5 +1,5 @@
 import './style.css';
-import { analyseMoment, fmtPct, buildVerdictPayload, verdictSentence, dist } from './scoring.js';
+import { analyseMoment, fmtPct, buildVerdictPayload, verdictSentence, easyRead, scoreAfter, dist } from './scoring.js';
 import { MOMENTS, EVENTS } from './data.js';
 import { createLive } from './live.js';
 import { LEAD_S, normalizeRun, positionAt, liftAt, poseAt, passPoint, easeOut, easeInOut, easeBall, easeDriven } from './motion.js';
@@ -313,7 +313,7 @@ function addMapLinks(m, others, played, landing) {
   others.forEach(o => {
     const at = disp(o.location), [a, b] = trim(start, at, MAP_R + .4, MAP_R + .8);
     s('line', { x1: a[0], y1: a[1], x2: b[0], y2: b[1], stroke: '#4b5563', 'stroke-width': .3, 'stroke-dasharray': '1.2 .9', 'marker-end': 'url(#map-head-opt)' }, g);
-    const text = fmtPct(o.arrives), [tx, ty] = label(at[0], at[1] - MAP_R - 1, text, -1);
+    const text = `${letterOf.get(o)} ${fmtPct(o.arrives)}`, [tx, ty] = label(at[0], at[1] - MAP_R - 1, text, -1);
     s('text', { x: tx, y: ty, 'text-anchor': 'middle', class: 'map-lbl', fill: '#4b5563' }, g).textContent = text;
   });
   const endAt = m.showLanding ? landing : played.location, end = disp(endAt);
@@ -328,7 +328,7 @@ function addMapLinks(m, others, played, landing) {
     s('polyline', { points, fill: 'none', stroke: INK, 'stroke-width': .7, 'stroke-linejoin': 'round', 'marker-end': 'url(#map-head)' }, g);
   }
   if (m.showLanding) s('circle', { cx: end[0], cy: end[1], r: 1.2, fill: 'none', stroke: INK, 'stroke-width': .3, 'stroke-dasharray': '.8 .6' }, g);
-  const text = `#${shirt(played.player)} · ${fmtPct(played.arrives)}`;
+  const text = `${letterOf.get(played)} · #${shirt(played.player)} · ${fmtPct(played.arrives)}`;
   const [tx, ty] = label(end[0], end[1] + 4.2, text, 1, m.aerial ? 5.6 : 3);
   const t = s('text', { x: tx, y: m.aerial ? ty - 1.8 : ty, 'text-anchor': 'middle', class: 'map-lbl', fill: INK }, g);
   t.textContent = text;
@@ -341,15 +341,15 @@ function reset() {
   flip = m.team === 'Away';
   drawTurf();
   drawPlayers(m);
-  $('overlay').textContent = ''; $('groundRings').textContent = ''; labelBoxes = []; ringBoxes = [];
+  $('overlay').textContent = ''; $('groundRings').textContent = ''; labelBoxes = []; ringBoxes = []; ringOf.clear(); letterOf.clear();
   $('result').textContent = '';
   $('goalFlash').classList.remove('show');
-  hideTip();
+  hideTip(); stopSpeech();
   trailClear(); setBall(m.start);
   $('status').textContent = '';
   $('playBtn').disabled = false;
   $('playBtn').textContent = '▶ Play the moment';
-  document.querySelectorAll('.goal-btn').forEach((b, i) => b.setAttribute('aria-pressed', i === current));
+  document.querySelectorAll('.tl-goal').forEach((b, i) => b.setAttribute('aria-pressed', i === current));
 }
 
 // ---- option rings: a glass sphere around the player and an ellipse on the grass ------------
@@ -369,7 +369,7 @@ function addRing(pos, kind, opt) {
   ringBoxes.push([c.x - c.r, c.y - c.r, c.x + c.r, c.y + c.r]);
   if (opt) {
     g.setAttribute('tabindex', 0); g.setAttribute('role', 'button');
-    g.setAttribute('aria-label', `${opt.player}: show numbers`);
+    g.setAttribute('aria-label', `${letterOf.get(opt) || ''} ${opt.player}: show numbers`.trim());
     const open = e => { e.stopPropagation(); showTip(g, opt); };
     g.addEventListener('click', open);
     g.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') open(e); });
@@ -401,6 +401,9 @@ let labelBoxes = [], ringBoxes = [];
 const figBoxes = () => figs.map(f => { const [sx, sy, sc] = project(f.pos[0], f.pos[1]), k = sc * FIG; return [sx - 16 * k, sy - 92 * k, sx + 16 * k, sy + 4 * k, .25]; });
 const LBL_CHAR = 10.2, LBL_H = 20;                     // .lbl is 17px monospace
 const standBox = () => [-VIEW.w, -VIEW.w, 2 * VIEW.w, projectWorld(60, 0)[1]];   // keep labels off the stand behind the far touchline
+const letterOf = new Map(), ringOf = new Map();        // option -> "A".."D" (ranked by expected value), option -> its sphere
+const rankLetters = shown => { letterOf.clear(); [...shown].sort((x, y) => y.ev - x.ev).forEach((o, i) => letterOf.set(o, 'ABCDE'[i])); };
+const pitchText = o => `${letterOf.get(o)} · #${shirt(o.player)} · ${fmtPct(o.arrives)}`;
 const pitchLabel = (x, y, text, dir) => placeLabel(x, y, text.length * LBL_CHAR + 6, LBL_H, LBL_H, dir, [...figBoxes(), ...ringBoxes, standBox()], labelBoxes);
 
 // shorten a segment at both ends so arrows stop at the spheres
@@ -420,7 +423,7 @@ function addArrow(from, opt, played) {
     'marker-end': `url(#head-${played ? 'played' : 'opt'})`,
   }, g);
   // label above the sphere (below the feet for the played pass), nudged clear of players, spheres and other labels
-  const text = `#${shirt(opt.player)} · ${fmtPct(opt.arrives)}`;
+  const text = pitchText(opt);
   const [tx, ty] = pitchLabel(c2.x, played ? c2.foot + 30 * c2.sc + 8 : c2.y - c2.r - 8, text, played ? 1 : -1);
   s('text', { x: tx, y: ty, 'text-anchor': 'middle', class: 'lbl', fill: color }, g).textContent = text;
 }
@@ -428,21 +431,14 @@ function addArrow(from, opt, played) {
 // The played pass drawn as it really goes: from the ball to the spot where it arrives, with a dashed mark on the grass there
 // and a faint dotted line showing the receiver running onto it. With `air` ({ lift, z0, z1 }, a cross) the arrow flies
 // through the air on the ball's real height curve and ends at head height, with its shadow dashed on the grass.
-function addLandingArrow(from, opt, landing, bend = 0, air = null) {
+// the screen path of the played pass: follows the ball's real path (straight when bend = 0), leaving a gap at the ball and at the landing mark
+function landingPath(from, landing, bend = 0, air = null) {
   const [lx, ly, lsc] = project(landing[0], landing[1]);
   const k = lsc * FIG;
-  const g = s('g', { class: 'fade' }, $('overlay'));
-  const rf = centre(opt.location).foot, rx = centre(opt.location).x;
-  s('line', { x1: rx, y1: rf, x2: lx, y2: ly, stroke: INK, 'stroke-width': 1.6, 'stroke-opacity': .55, 'stroke-dasharray': '2 5', 'stroke-linecap': 'round' }, g);
-  s('ellipse', { cx: lx, cy: ly, rx: 30 * k, ry: 9 * k, fill: INK, 'fill-opacity': .1, stroke: INK, 'stroke-width': 1.6, 'stroke-dasharray': '5 4' }, g);
-  ringBoxes.push([lx - 30 * k, ly - 9 * k, lx + 30 * k, ly + 9 * k]);   // labels keep off the landing mark
-  // follow the ball's real path (straight when bend = 0), leaving a gap at the ball and at the landing mark
   const steps = Array.from({ length: 41 }, (_, i) => passPoint(from, landing, bend, air ? air.lift : 0, i / 40, air ? air.z0 : 0, air ? air.z1 : 0));
   const onGrass = steps.map(({ p: [x, y] }) => project(x + 1.1, y).slice(0, 2));
-  const line = list => list.map(p => p.map(n => n.toFixed(1)).join(',')).join(' ');
   let kept;
   if (air) {
-    s('polyline', { points: line(onGrass), fill: 'none', stroke: INK, 'stroke-width': 1.4, 'stroke-opacity': .35, 'stroke-dasharray': '4 4' }, g);   // shadow
     // heights scaled so the arrow's tip is at head height above the landing mark (where the ball meets the head)
     const head = 80 * k, zk = head / ((air.z1 || 1) * lsc);
     const inAir = steps.map(({ p: [x, y], z }) => { const [px, py, psc] = project(x + 1.1, y); return [px, py - z * zk * psc]; });
@@ -450,8 +446,24 @@ function addLandingArrow(from, opt, landing, bend = 0, air = null) {
   } else {
     kept = onGrass.filter(p => dist(p, onGrass[0]) > 10 && dist(p, [lx, ly]) > 30 * k + 4);
   }
+  return { lx, ly, k, onGrass, kept };
+}
+// labels placed before the arrow is drawn (the other options') still keep clear of its path and of the landing mark
+function reservePath({ lx, ly, k, kept }) {
+  ringBoxes.push([lx - 30 * k, ly - 9 * k, lx + 30 * k, ly + 9 * k]);
+  kept.forEach(([x, y]) => ringBoxes.push([x - 9, y - 9, x + 9, y + 9]));
+}
+
+function addLandingArrow(from, opt, landing, bend = 0, air = null) {
+  const { lx, ly, k, onGrass, kept } = landingPath(from, landing, bend, air);
+  const g = s('g', { class: 'fade' }, $('overlay'));
+  const rf = centre(opt.location).foot, rx = centre(opt.location).x;
+  s('line', { x1: rx, y1: rf, x2: lx, y2: ly, stroke: INK, 'stroke-width': 1.6, 'stroke-opacity': .55, 'stroke-dasharray': '2 5', 'stroke-linecap': 'round' }, g);
+  s('ellipse', { cx: lx, cy: ly, rx: 30 * k, ry: 9 * k, fill: INK, 'fill-opacity': .1, stroke: INK, 'stroke-width': 1.6, 'stroke-dasharray': '5 4' }, g);
+  const line = list => list.map(p => p.map(n => n.toFixed(1)).join(',')).join(' ');
+  if (air) s('polyline', { points: line(onGrass), fill: 'none', stroke: INK, 'stroke-width': 1.4, 'stroke-opacity': .35, 'stroke-dasharray': '4 4' }, g);   // shadow
   s('polyline', { points: line(kept), fill: 'none', stroke: INK, 'stroke-width': 4.5, 'stroke-linejoin': 'round', 'marker-end': 'url(#head-played)' }, g);
-  const text = `#${shirt(opt.player)} · ${fmtPct(opt.arrives)}`;
+  const text = pitchText(opt);
   const [tx, ty] = pitchLabel(lx, ly + 9 * k + 22, text, 1);
   s('text', { x: tx, y: ty, 'text-anchor': 'middle', class: 'lbl', fill: INK }, g).textContent = text;
 }
@@ -462,7 +474,7 @@ function showTip(ringG, opt) {
   const r = ringG.getBoundingClientRect(), w = wrap.getBoundingClientRect();
   tip.textContent = '';
   tip.append(
-    h('b', { textContent: opt.player + (opt.played ? ' (played)' : '') }),
+    h('b', { textContent: `${letterOf.get(opt) ? letterOf.get(opt) + ' · ' : ''}${opt.player}${opt.played ? ' (played)' : ''}` }),
     `Arrives: ${fmtPct(opt.arrives)} (est.)`, h('br'),
     `Goal: ${fmtPct(opt.goal)} (est.)`, h('br'),
     `Expected value: ${fmtPct(opt.ev)} (est.)`, h('br'),
@@ -471,6 +483,7 @@ function showTip(ringG, opt) {
   tip.style.display = 'block';
   tip.style.left = clampPx(r.left - w.left + r.width / 2, 120, w.width - 120) + 'px';
   tip.style.top = (r.top - w.top) + 'px';
+  wrap.scrollIntoView({ block: 'nearest' });              // from the table on a phone, bring the pitch into view
 }
 const clampPx = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 function hideTip() { $('tip').style.display = 'none'; }
@@ -481,12 +494,32 @@ document.addEventListener('click', hideTip);
 const vsNextBest = (o, all) => o.ev / Math.max(...all.filter(x => x !== o).map(x => x.ev));
 const fmtRatio = r => (r >= 10 ? Math.round(r) : r.toFixed(1)) + '×';
 
+// Listen: the browser's own speech reads the verdict sentence (so it will read the Azure one too once that lands)
+const canSpeak = 'speechSynthesis' in window;
+const stopSpeech = () => { if (canSpeak) speechSynthesis.cancel(); };
+function speak(text, btn) {
+  if (speechSynthesis.speaking) { speechSynthesis.cancel(); btn.setAttribute('aria-pressed', false); return; }
+  const u = new SpeechSynthesisUtterance(text);
+  u.onend = u.onerror = () => btn.setAttribute('aria-pressed', false);
+  btn.setAttribute('aria-pressed', true);
+  speechSynthesis.speak(u);
+}
+
 function showResult(a, shown, said) {
   const box = $('result'); box.textContent = '';
+  const m = a.moment;
+  const easy = easyRead(buildVerdictPayload(a), { team: m.team, passer: m.passer, score: scoreAfter(MOMENTS, MOMENTS.indexOf(m)) });
+  const listen = canSpeak && h('button', { className: 'listen', type: 'button', textContent: '🔊 Listen', title: 'Read the verdict aloud' });
+  if (listen) { listen.setAttribute('aria-pressed', false); listen.addEventListener('click', () => speak(`${m.minute} minutes. ${m.team} goal. ${said.text}`, listen)); }
+  const pick = o => e => {                                 // a table row opens that option's numbers on its sphere
+    if (e.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault(); e.stopPropagation();
+    if (ringOf.get(o)) showTip(ringOf.get(o), o);
+  };
   const th = (label, est) => h('th', {}, label, est ? h('span', { className: 'tag', textContent: 'est.', title: 'estimated' }) : '');
   const rows = [...shown].sort((x, y) => y.ev - x.ev).map(o =>
-    h('tr', { className: o.played ? 'played' : '' },
-      h('td', { textContent: o.player }),
+    h('tr', { className: 'opt-row' + (o.played ? ' played' : ''), tabIndex: 0, title: 'Show this option on the pitch', onclick: pick(o), onkeydown: pick(o) },
+      h('td', {}, h('span', { className: 'letter', textContent: letterOf.get(o) }), o.player),
       h('td', { textContent: fmtPct(o.arrives) }),
       h('td', { textContent: fmtPct(o.goal) }),
       h('td', { textContent: fmtRatio(vsNextBest(o, a.options)) + (o.played ? ' ★' : ''), title: `Expected value ${fmtPct(o.ev)} (est.)` }),
@@ -496,10 +529,12 @@ function showResult(a, shown, said) {
     h('p', { className: 'sentence', textContent: said.text }),
     h('p', { className: 'note' }, h('span', { className: 'tag src', textContent: SOURCE_TAG[said.source] }),
       ' Judged by the odds at the moment of the pass, not the result · estimated'),
+    listen || '',
+    h('div', { className: 'easy' }, h('h4', { textContent: 'Easy read' }), h('p', { textContent: easy })),
     h('div', { className: 'table-wrap' }, h('table', {},
       h('thead', {}, h('tr', {}, th('Option'), th('Arrives', true), th('Goal', true), th('vs next best', true), th('Cut out'))),
       h('tbody', {}, rows))),
-    h('p', { className: 'caption', textContent: '★ = the pass played. "vs next best" compares its expected value with the best other option; Cut out = defenders the pass goes past. Tap a sphere for all numbers.' }));
+    h('p', { className: 'caption', textContent: '★ = the pass played. "vs next best" compares its expected value with the best other option; Cut out = defenders the pass goes past. Letters rank the options by expected value. Tap a row or a sphere for all numbers.' }));
 }
 
 // ---- the main sequence -------------------------------------------------------
@@ -532,8 +567,8 @@ async function play() {
   const tauEnd = flight + carry + shotS + CELEBRATE_S;
   const said = getSentence(current);                       // asked for when the goal happens, ready by the reveal
 
-  $('overlay').textContent = ''; $('groundRings').textContent = ''; $('mapLinks').textContent = ''; $('result').textContent = ''; hideTip();
-  labelBoxes = []; ringBoxes = []; trailClear();
+  $('overlay').textContent = ''; $('groundRings').textContent = ''; $('mapLinks').textContent = ''; $('result').textContent = ''; hideTip(); stopSpeech();
+  labelBoxes = []; ringBoxes = []; ringOf.clear(); trailClear();
   $('goalFlash').classList.remove('show');
   btn.disabled = true; btn.textContent = '▶ Playing…';
   $('status').textContent = `${m.team} goal ${m.minute}' · ${m.passer} finds ${m.receiver}`;
@@ -585,14 +620,16 @@ async function play() {
   const others = a.options.filter(o => !o.played).sort((x, y) => y.ev - x.ev);
   const top3 = m.ringed ? others.filter(o => m.ringed.includes(o.player)) : others.slice(0, m.shown ?? 3);
   const shown = [...top3, a.played];
+  rankLetters(shown);
   addRing(m.start, 'passer');                                              // the passer
   await wait(500); if (stale()) return;
-  shown.forEach(o => addRing(o.location, o.played ? 'played' : 'opt', o)); // the options
+  shown.forEach(o => ringOf.set(o, addRing(o.location, o.played ? 'played' : 'opt', o))); // the options
   await wait(500); if (stale()) return;
+  const air = m.aerial ? { lift: m.lift || 0, z0: m.startZ || 0, z1: m.arriveZ || 0 } : null;
+  if (m.showLanding) reservePath(landingPath(m.start, arrive, m.bend || 0, air));   // the other labels keep off the played arrow
   top3.forEach(o => addArrow(m.start, o, false));                          // dashed arrows + % labels
   await wait(500); if (stale()) return;
-  if (m.showLanding) addLandingArrow(m.start, a.played, arrive, m.bend || 0,           // the pass played (to where the ball arrives)
-    m.aerial ? { lift: m.lift || 0, z0: m.startZ || 0, z1: m.arriveZ || 0 } : null);
+  if (m.showLanding) addLandingArrow(m.start, a.played, arrive, m.bend || 0, air);     // the pass played (to where the ball arrives)
   else addArrow(m.start, a.played, true);
   if (mapNodes) addMapLinks(m, top3, a.played, arrive);
   await wait(500); if (stale()) return;
@@ -605,13 +642,6 @@ async function play() {
 }
 
 // ---- wiring ----------------------------------------------------------------
-MOMENTS.forEach((m, i) => {
-  const b = h('button', { className: 'goal-btn', type: 'button' },
-    h('b', { textContent: `Goal ${i + 1} – ${m.minute}'` }),
-    h('span', { textContent: `${m.team} · ${m.passer} → ${m.receiver}` }));
-  b.addEventListener('click', () => { live.stop(); current = i; reset(); });
-  $('picker').append(b);
-});
 $('playBtn').addEventListener('click', () => { live.stop(); play(); });
 
 // ---- live match mode (the default view) -----------------------------------------
@@ -632,7 +662,7 @@ const live = createLive({
   },
   onTick: minute => {
     $('clock').textContent = `${Math.floor(minute)}'`;
-    $('progress').style.width = `${(minute / 90) * 100}%`;
+    updateTimeline();
   },
   onGoal: async (i, stale) => {
     current = i; reset();
@@ -644,9 +674,72 @@ const live = createLive({
   onState: state => {
     $('liveBtn').textContent = LIVE_LABEL[state];
     if (state === 'reset') { goals.Home = goals.Away = 0; showScore(); $('ticker').textContent = ''; }
+    updateTimeline();
   },
 });
 $('liveBtn').addEventListener('click', () => live.toggle());
+
+// ---- match timeline: goals above (Home) and below (Away) the line, the playhead follows the live clock ------------
+// Before kick-off and at full time every goal shows; while the match runs a goal appears only once the clock reaches it.
+const revealed = i => !live.started || live.minute >= 90 || live.minute >= MOMENTS[i].minute;
+const TL_TICKS = [[0, "0'"], [15, "15'"], [30, "30'"], [45, 'HT'], [60, "60'"], [75, "75'"], [90, "90'"]];
+const TL_EVENTS = EVENTS.filter(e => /^(Home|Away|Both)/.test(e.text));
+const atMin = min => `${(min / 90) * 100}%`;
+const tl = { goals: [], events: [], segs: [] };
+
+function jumpTo(i) { live.stop(); current = i; reset(); }
+function step(dir) {                                       // previous / next among the goals shown so far
+  const ok = MOMENTS.map((_, i) => i).filter(revealed);
+  if (!ok.length) return;
+  const at = ok.indexOf(current);
+  jumpTo(ok[at < 0 ? 0 : (at + dir + ok.length) % ok.length]);
+}
+
+function drawTimeline() {
+  const track = h('div', { className: 'tl-track' });
+  tl.played = h('div', { className: 'tl-played' });
+  tl.head = h('div', { className: 'tl-head' });
+  const scrub = h('button', { className: 'tl-scrub', type: 'button', ariaLabel: 'Match timeline: click to jump to the nearest goal' });
+  scrub.addEventListener('click', e => {
+    const r = scrub.getBoundingClientRect(), min = ((e.clientX - r.left) / r.width) * 90;
+    const ok = MOMENTS.map((_, i) => i).filter(revealed);
+    if (ok.length) jumpTo(ok.reduce((b, i) => (Math.abs(MOMENTS[i].minute - min) < Math.abs(MOMENTS[b].minute - min) ? i : b)));
+  });
+  track.append(h('div', { className: 'tl-line' }), tl.played, tl.head, scrub);
+  TL_TICKS.forEach(([min, text]) => track.append(h('span', { className: 'tl-tick', textContent: text, style: `left:${atMin(min)}` })));
+  tl.events = TL_EVENTS.map(e => { const d = h('span', { className: 'tl-event', title: `${e.minute}' ${e.text}`, style: `left:${atMin(e.minute)}` }); track.append(d); return d; });
+  tl.goals = MOMENTS.map((m, i) => {
+    const b = h('button', { className: `tl-goal ${m.team.toLowerCase()}`, type: 'button', style: `left:${atMin(m.minute)}`,
+      ariaLabel: `Goal ${i + 1}, ${m.minute} minutes, ${m.team}, ${m.passer} to ${m.receiver}` },
+      h('span', { className: 'tl-dot' }), h('span', { className: 'tl-lab', textContent: `${m.minute}'` }));
+    b.setAttribute('aria-pressed', i === current);
+    b.addEventListener('click', () => jumpTo(i));
+    track.append(b); return b;
+  });
+  // score strip: one segment per scoreline, from the moments' order and teams
+  const strip = h('div', { className: 'tl-strip', ariaLabel: 'Score through the match' });
+  const marks = [0, ...MOMENTS.map(m => m.minute), 90];
+  tl.segs = marks.slice(0, -1).map((from, k) => {
+    const sc = k ? scoreAfter(MOMENTS, k - 1) : { Home: 0, Away: 0 };
+    const seg = h('span', { className: 'tl-seg', textContent: `${sc.Home}–${sc.Away}`, style: `left:${atMin(from)};width:${((marks[k + 1] - from) / 90) * 100}%` });
+    strip.append(seg); return seg;
+  });
+  track.append(strip);
+  $('timeline').textContent = '';
+  $('timeline').append(track);
+}
+
+function updateTimeline() {
+  const on = live.started, min = Math.min(90, live.minute);
+  tl.played.style.width = on ? atMin(min) : '0';
+  tl.head.style.display = on ? '' : 'none';
+  tl.head.style.left = atMin(min);
+  tl.goals.forEach((b, i) => { b.hidden = !revealed(i); });
+  tl.events.forEach((d, i) => { d.hidden = on && live.minute < TL_EVENTS[i].minute; });
+  tl.segs.forEach((seg, k) => { seg.classList.toggle('plain', k > 0 && !revealed(k - 1)); });
+}
+$('prevBtn').addEventListener('click', () => step(-1));
+$('nextBtn').addEventListener('click', () => step(1));
 
 // broadcast view (one pitch, like a real overlay) or analyst view (plus the node map and player list)
 document.querySelectorAll('.view-toggle button').forEach(b => b.addEventListener('click', () => {
@@ -654,4 +747,6 @@ document.querySelectorAll('.view-toggle button').forEach(b => b.addEventListener
   $('views').classList.toggle('analyst', b.dataset.view === 'analyst');
 }));
 drawMapTurf();
+drawTimeline();
 reset();
+updateTimeline();

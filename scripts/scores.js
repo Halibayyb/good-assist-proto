@@ -1,7 +1,7 @@
 // Prints every option's numbers and the verdict for each moment, using the same modules as the page.
 // Run: npm run scores
 import { MOMENTS } from '../src/data.js';
-import { analyseMoment, buildVerdictPayload, verdictSentence } from '../src/scoring.js';
+import { analyseMoment, buildVerdictPayload, verdictSentence, easyRead, scoreAfter } from '../src/scoring.js';
 import { normalizeRun, positionAt, passPoint, easeBall } from '../src/motion.js';
 
 // Physical checks on the played pass: onside at release, and how close the curved ball comes to any
@@ -50,6 +50,10 @@ MOMENTS.forEach((m, i) => {
   const words = sentence.split(/\s+/).length, numbers = (sentence.match(/\d+(\.\d+)?/g) || []).length;
   console.log(`${sentence}  (${words} words, ${numbers} number${numbers === 1 ? '' : 's'})`);
   if (words > 20 || numbers > 1) { console.log('<<< sentence too long or has more than one number'); process.exitCode = 1; }
+  const easy = easyRead(buildVerdictPayload(a), { team: m.team, passer: m.passer, score: scoreAfter(MOMENTS, i) });
+  const longest = Math.max(...easy.split(/(?<=\.)\s+/).map(x => x.split(/\s+/).length));
+  console.log(`Easy read: ${easy}  (longest sentence ${longest} words)`);
+  if (longest > 15 || /%/.test(easy)) { console.log('<<< easy read too long or has a percentage'); process.exitCode = 1; }
   const c = checks(m);
   console.log(`checks: onside=${c.onside}  nearest-defender=${c.marker}  ball-path clearance=${c.clearance} units (${c.closest})  avg ball speed=${c.avgSpeed} units/s`);
   if (a.verdict.key !== intended[i] || !c.onside || c.clearance < 1.5) process.exitCode = 1;

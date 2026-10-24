@@ -12,6 +12,9 @@ When a goal goes in, the app replays the killer pass behind it, freezes all 22 p
 scores every option the passer had, and tells fans in one plain sentence why this pass was the smart choice.
 A live mode runs a whole (synthetic) match in under two minutes, Home 2–1 Away: a 71st-minute opener, an 82nd-minute headed
 equaliser and an 87th-minute winner. The quiet first hour flies by, the tense last 25 minutes slow down, and at each goal the insight pops up on its own.
+A match timeline (Home goals above the line, Away below) follows the clock and only reveals a goal once the match reaches it. Click any goal, or use ‹ ›, to jump to it.
+Each option on the pitch, the map and the table carries a letter (A, B, C…) ranked by expected value. Click a table row to see that option's numbers on the pitch.
+For accessibility there is an **Easy read** (two short plain sentences, no percentages) and a **Listen** button that reads the verdict aloud with the browser's built-in speech.
 
 ## The problem it solves
 
@@ -76,7 +79,7 @@ The decision is judged by the odds at the moment of the pass, never by the resul
 index.html          SVG shell: marker defs, player pose symbols, layers; live bar, view toggle, panel
 src/scoring.js      pure scoring + verdict payload/template (no DOM; can move to a backend)
 src/motion.js       pure motion model shared by the animation and the checks
-src/live.js         live match clock + event ticker (no DOM)
+src/live.js         live match clock + event ticker (no DOM); main.js draws the timeline from it
 src/data.js         the three synthetic goal moments (team, minute, 22 positions, motion) and the match events
 src/main.js         rendering: perspective pitch, node map, animation timeline, panel
 scripts/            scores.js (checks), calibrate.js (model vs reference shots)

@@ -165,3 +165,22 @@ export function verdictSentence(payload) {
   if (verdict === 'line_breaker') return `Line-breaker: one pass took ${played.cut_out} defenders out of the game, more than any other option.`;
   return 'Perfect timing: the pass found its player at exactly the right moment.';
 }
+
+// Easy read: two short plain sentences for screen readers and quick reading, with no percentages. `score` is
+// { Home, Away } counted from the goals so far (computed, never typed). Same payload as the verdict sentence.
+export function easyRead(payload, { team, passer, score }) {
+  const why = {
+    best_option: `${passer} picked the pass with the best mix of safety and danger.`,
+    brave_pass: `${passer} tried the boldest pass, the one most likely to score.`,
+    line_breaker: `${passer}'s pass went past more defenders than any other.`,
+    perfect_timing: `${passer} passed at just the right moment.`,
+  };
+  return `Goal for ${team}. Home ${score.Home}, Away ${score.Away}. ${why[payload.verdict]}`;
+}
+
+// the scoreline after goal i (0-based), counted from the moments' teams: { Home, Away }
+export function scoreAfter(moments, i) {
+  const score = { Home: 0, Away: 0 };
+  moments.slice(0, i + 1).forEach(m => { score[m.team]++; });
+  return score;
+}
