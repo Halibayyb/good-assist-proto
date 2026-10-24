@@ -8,7 +8,8 @@
 // Optional pass fields: flight (s), bend and lift (pitch units, see motion.js passPoint), startZ / arriveZ (ball height
 // at the foot and at the receiver), aerial (a cross: lane defenders are ignored when scoring), carry (s of dribbling).
 // shown (number of other options ringed on the reveal, default 3) or ringed (their names), showLanding (draw the played pass to the
-// spot where the ball arrives), scoreAtEnd (score the played pass at `end`, its reception point, instead of the receiver's position),
+// spot where the ball arrives), intoSpace (a ball into space: the played pass is scored at `end`, its reception point, and every
+// other option where its own run takes it by the time a ball of the same pace arrives; see scoring.js receptionPoint),
 // positions ({ name: 'ST', ... } for the analyst view's player list), lead (seconds shown before the pass) and prelude ({ from, pass, recv, touch, bend }: the ball played in to the passer first).
 // Optional shot fields: to, s (seconds in the air), z (height at the goal line), lift.
 
@@ -40,7 +41,8 @@ export const MOMENTS = [
     minute: 71, team: 'Home', passer: 'Player 8', receiver: 'Player 11',
     start: [88, 50], end: [107.4, 21.7], shot: { from: [107.4, 21.7], to: [120, 43.3] },
     flight: 1.3, bend: 4, lift: 1.8,
-    showLanding: true,                                              // draw the curved pass to where it lands (scored at the runner's spot)
+    showLanding: true,                                              // draw the curved pass to where it lands
+    intoSpace: true,                                                // a through ball into space: every option scored where it would be received
     positions: {
       'Player 1': 'GK', 'Player 2': 'RB', 'Player 4': 'CB', 'Player 5': 'CB', 'Player 3': 'LB', 'Player 6': 'CM',
       'Player 8': 'CM', 'Player 10': 'AM', 'Player 7': 'RW', 'Player 11': 'LW', 'Player 9': 'ST',
@@ -66,7 +68,7 @@ export const MOMENTS = [
       A('Player 1', 5, 40, true), A('Player 2', 60, 58), A('Player 3', 62, 26), A('Player 4', 70, 46), A('Player 5', 74, 30),
       A('Player 6', 82, 60), A('Player 7', 96, 64), A('Player 8', 88, 50), A('Player 9', 99.8, 40), A('Player 10', 92, 38), A('Player 11', 100.2, 20),
       D('Goalkeeper', 115, 40, true), D('Defender 2', 99.4, 10), D('Defender 3', 99.8, 31), D('Defender 4', 100.2, 45), D('Defender 5', 99.6, 63),
-      D('Defender 6', 94, 35), D('Defender 7', 94, 52), D('Defender 8', 84, 40), D('Defender 9', 86, 56), D('Defender 10', 80, 28), D('Defender 11', 92, 22),
+      D('Defender 6', 94, 35), D('Defender 7', 94, 52), D('Defender 8', 84, 40), D('Defender 9', 86, 56), D('Defender 10', 80, 28), D('Defender 11', 93, 24.5),
     ],
   },
   { // 2. Away equaliser, a heading finish: a whipped inswinging cross from the right flank, headed low into the far corner
@@ -96,7 +98,7 @@ export const MOMENTS = [
     },
     freeze_frame: [
       A('Player 1', 5, 40, true), A('Player 2', 62, 48), A('Player 3', 64, 26), A('Player 4', 72, 60), A('Player 5', 76, 18),
-      A('Player 6', 95, 40), A('Player 7', 102, 68), A('Player 8', 99, 52), A('Player 9', 107.5, 44), A('Player 10', 112, 28), A('Player 11', 96, 62),
+      A('Player 6', 95, 40), A('Player 7', 102, 68), A('Player 8', 100, 52.5), A('Player 9', 107.5, 44), A('Player 10', 112, 28), A('Player 11', 96, 62),
       D('Goalkeeper', 117.5, 44.8, true), D('Defender 2', 108.5, 43.5), D('Defender 3', 114, 31), D('Defender 4', 105, 56), D('Defender 5', 106, 20),
       D('Defender 6', 98, 42), D('Defender 7', 96, 50), D('Defender 8', 97, 30), D('Defender 9', 92, 40), D('Defender 10', 101, 64), D('Defender 11', 90, 46),
     ],
@@ -106,7 +108,7 @@ export const MOMENTS = [
     start: [82, 44], end: [109, 48], shot: { to: [120, 37.5], s: 0.3, z: 0, lift: 0.1 },
     flight: 1.55, bend: 3, lift: 0.1,                               // along the grass, curling around the centre-back standing in the lane
     carry: 0.37,                                                    // one touch forward, then a low finish across the keeper
-    scoreAtEnd: true,                                               // score the played pass where it is received, not where the runner stood
+    intoSpace: true,                                                // a through ball into space: every option scored where it would be received
     showLanding: true,
     positions: {
       'Player 1': 'GK', 'Player 2': 'RB', 'Player 3': 'CB', 'Player 5': 'CB', 'Player 6': 'LB', 'Player 16': 'DM',

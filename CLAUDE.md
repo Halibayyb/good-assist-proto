@@ -37,19 +37,25 @@ Scoring reads only `moment.freeze_frame` (all 22 players on a 120 x 80 pitch, at
 
 ### Scoring model (spec given by the user, do not change casually)
 
-Arrives = `0.98 - 0.012*dist - 0.25*lane defenders - 0.15*(nearest defender < 3)`, clamped 0.05..0.98. Goal = `baseXg` (logistic on angle and distance, coefficients in `XG`, tuned with `npm run calibrate`) x 0.75 per **outfield** opponent in the receiver-post-post triangle, or x `XG.keeperOnly` (1.8) when there are none, clamped 0.01..0.7. EV = arrives x goal. Cut out = outfield opponents with `passer.x < x < target.x`. Each option's `target` is the teammate's freeze-frame position, except that `scoreAtEnd: true` scores the played pass at `moment.end` (its reception point, for through balls into space). Only Goal 3 uses it; making it global would need Goals 1 and 2 re-tuned. Verdict priority: best EV -> highest goal chance -> most cut out -> "Perfect timing"; **ties go to the played pass**. The opposing goalkeeper counts as a lane defender and a nearest-defender, but not as a triangle blocker (the base xG already assumes a keeper) and not as "cut out". A moment with `aerial: true` (crosses) ignores lane defenders.
+Constants live in `PASS`, `XG` and `CUT` in `src/scoring.js`.
+- Arrives = `0.98 - 0.012*dist - 0.25*lane defenders (within 2.5 of the line) - 0.15*(nearest defender < 3) - 0.10*lofted`, clamped 0.05..0.98. A moment with `aerial: true` (crosses) is lofted: it ignores lane defenders but pays the flat 0.10 penalty.
+- Goal = `baseXg` (logistic on angle and distance, coefficients in `XG`, tuned with `npm run calibrate`) x `blockerFactor(b)`, clamped 0.01..0.7. `b` = `blockerWeight`: each **outfield** opponent adds `max(0, 1 - distToTriangle(defender, spot, post1, post2) / 1.5)` (1 inside the receiver-post-post triangle, fading to 0 at 1.5 units outside). `blockerFactor(b)` = `0.8^b` once b >= 1, else `1.6^(1-b) x 0.8^b`, so it is continuous: x1.6 with only the keeper to beat, x0.8 per full blocker.
+- EV = arrives x goal. Cut out = outfield opponents with `passer.x < x < target.x` **and** within 12 units (`CUT.involved`) of the pass segment, so a winger tracking back on the far side doesn't count.
+- Each option's `target` comes from `receptionPoint`: the teammate's freeze-frame position, unless the moment has `intoSpace: true` (Goals 1 and 3, through balls into space). Then the played pass is scored at `moment.end` and every other teammate where their own `run` takes them by the time a ball of the same pace (`dist(start, end) / flight`) arrives, so the played pass gets no head start.
+- Verdict priority: best EV -> highest goal chance -> most cut out -> "Perfect timing"; **ties go to the played pass**. The opposing goalkeeper counts as a lane defender and a nearest-defender, but never as a blocker (the base xG already assumes a keeper) and not as "cut out".
 
 ### Tuning a moment
 
 Verdicts must come from the numbers, never forced. To get a moment to its intended verdict, move positions in `src/data.js` and re-run `npm run scores`. Known traps:
 - xG decays steeply with distance and floors at 0.01, so scenes far from goal tie at the floor and the tie goes to the played pass ("brave pass"). Keep options within roughly 30 units of goal for goal chances to differ.
-- An outfield defender in an option's shooting triangle costs x0.75 and also removes the x1.8 keeper-only boost, so one blocker cuts the goal chance to ~40%. This is the main lever: Goal 3's Defender 5 and Goal 2's Defender 3 stand in the triangles of Player 9 and Player 10.
+- Blockers are smooth: a defender inside an option's shooting triangle (or within 1.5 units of it) moves the factor from x1.6 (keeper only) towards x0.8 per full blocker, so one full blocker cuts the goal chance to half. This is the main lever: Goal 3's Defender 5 and Goal 2's Defender 3 stand in the triangles of Player 9 and Player 10. Nudging a defender near the triangle's edge changes the number gradually, not in a jump.
+- With `intoSpace`, the alternatives are scored where their `run` takes them, so changing a teammate's run in `data.js` changes their numbers too, not just the animation.
 - Check margins in `played minus best-other`: margins of a few hundredths of a point are fragile.
-- `intended` verdicts today: Goal 1 line-breaker, Goal 2 brave pass, Goal 3 best option (all three must stay different). Goal 3's played pass should stay near arrives 40-50%, goal 35-42%, value 16-18%.
+- `intended` verdicts today: Goal 1 line-breaker, Goal 2 brave pass, Goal 3 best option (all three must stay different). Goal 3's played pass should stay near arrives 40-50%, goal 35-42%, value 13-18%.
 
 ### Per-moment optional fields (`data.js` header comment has the full list)
 
-`run` (velocities; objects can add `v0`, `delay`, `ramp`, `then` (with an optional friction time constant), `jump`, `slide`), `flight`, `bend`/`lift`/`startZ`/`arriveZ` (curved, lofted ball), `carry` (dribble seconds before the shot), `shot`, `aerial`, `shown` (how many other options to ring, default 3) or `ringed` (their names), `showLanding` (draw the played arrow to where the ball arrives instead of at the receiver), `scoreAtEnd` (see scoring model), `positions` (name -> 'ST' etc. for the analyst view's player list).
+`run` (velocities; objects can add `v0`, `delay`, `ramp`, `then` (with an optional friction time constant), `jump`, `slide`), `flight`, `bend`/`lift`/`startZ`/`arriveZ` (curved, lofted ball), `carry` (dribble seconds before the shot), `shot`, `aerial`, `shown` (how many other options to ring, default 3) or `ringed` (their names), `showLanding` (draw the played arrow to where the ball arrives instead of at the receiver), `intoSpace` (see scoring model), `positions` (name -> 'ST' etc. for the analyst view's player list).
 
 ### Rendering
 

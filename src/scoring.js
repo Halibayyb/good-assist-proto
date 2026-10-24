@@ -1,6 +1,7 @@
 // Scoring: pure functions, no DOM access, so this file can move to a backend service
 // (e.g. Azure Container Apps) unchanged.
 // Positions are [x, y] on a 120 x 80 pitch; the goal attacked is at x = 120, y = 36..44.
+import { normalizeRun, positionAt } from './motion.js';
 
 export const PITCH = { w: 120, h: 80 };
 export const GOAL = { x: 120, y1: 36, y2: 44 };
@@ -30,44 +31,78 @@ export function inTriangle(p, a, b, c) {
   return !((d1 < 0 || d2 < 0 || d3 < 0) && (d1 > 0 || d2 > 0 || d3 > 0));
 }
 
+// Distance from p to triangle abc: 0 inside, otherwise distance to the nearest edge.
+export function distToTriangle(p, a, b, c) {
+  if (inTriangle(p, a, b, c)) return 0;
+  return Math.min(distToSegment(p, a, b), distToSegment(p, b, c), distToSegment(p, c, a));
+}
+
 // ---- the four numbers (opponents = array of freeze_frame players, goalkeeper included) ----
 
 // 1. Chance the pass arrives (0.05 - 0.98). Model estimate.
 // `lofted` = the passer is delivering a cross or lofted ball (moment.aerial): it goes over the opponents standing
-// on the line, so they are not counted as lane defenders. The defender next to the receiver still counts.
+// on the line, so they are not counted as lane defenders. A ball in the air is harder to deliver and control, though,
+// so it pays a flat penalty instead. The defender next to the receiver still counts.
+export const PASS = { base: 0.98, perUnit: 0.012, laneWidth: 2.5, perLaneDefender: 0.25, markerRadius: 3, tightMarker: 0.15, lofted: 0.10, min: 0.05, max: 0.98 };
 export function chanceArrives(from, to, opponents, lofted = false) {
   const passDistance = dist(from, to);
-  const defendersInLane = lofted ? 0 : opponents.filter(o => distToSegment(o.location, from, to) < 2.5).length;
+  const defendersInLane = lofted ? 0 : opponents.filter(o => distToSegment(o.location, from, to) < PASS.laneWidth).length;
   const nearest = Math.min(...opponents.map(o => dist(o.location, to)));
-  const p = 0.98 - 0.012 * passDistance - 0.25 * defendersInLane - 0.15 * (nearest < 3 ? 1 : 0);
-  return clamp(p, 0.05, 0.98);
+  const p = PASS.base - PASS.perUnit * passDistance - PASS.perLaneDefender * defendersInLane
+    - PASS.tightMarker * (nearest < PASS.markerRadius ? 1 : 0) - (lofted ? PASS.lofted : 0);
+  return clamp(p, PASS.min, PASS.max);
 }
 
 // 2. Chance of a goal from the receiver's spot (0.01 - 0.7): a simple xG. Model estimate.
 // The base is a logistic on distance and angle, hand-tuned against reference open-play shots (scripts/calibrate.js).
-// The base already assumes a keeper, so only outfield opponents in the receiver-post-post triangle change it:
-// x0.75 each, or the "only the keeper to beat" boost when there are none.
-export const XG = { a: -0.2, angle: 0.5, dist: 0.095, perBlocker: 0.75, keeperOnly: 1.8, min: 0.01, max: 0.7 };
+// The base already assumes a keeper, so only outfield opponents near the receiver-post-post triangle change it.
+// Each one is a partial blocker, weight = max(0, 1 - distance to the triangle / XG.soft): 1 inside it, fading to 0 at
+// XG.soft units outside. With b = the summed weight, the factor is perBlocker^b once b >= 1, and below that it blends
+// from the "only the keeper to beat" boost (b = 0) down to perBlocker (b = 1): keeperOnly^(1-b) x perBlocker^b.
+// So a defender stepping into the shooting lane changes the chance continuously, with no cliff. The keeper is never a blocker.
+export const XG = { a: -0.2, angle: 0.5, dist: 0.095, perBlocker: 0.8, keeperOnly: 1.6, soft: 1.5, min: 0.01, max: 0.7 };
 export function baseXg(spot) {
   const z = XG.a + XG.angle * goalAngle(spot) - XG.dist * dist(spot, [GOAL.x, 40]);
   return 1 / (1 + Math.exp(-z));
 }
-export function chanceGoal(spot, opponents) {
+export function blockerWeight(spot, opponents) {
   const post1 = [GOAL.x, GOAL.y1], post2 = [GOAL.x, GOAL.y2];
-  const blockers = opponents.filter(o => !o.gk && inTriangle(o.location, spot, post1, post2)).length;
-  return clamp(baseXg(spot) * (blockers ? XG.perBlocker ** blockers : XG.keeperOnly), XG.min, XG.max);
+  return opponents.filter(o => !o.gk)
+    .reduce((b, o) => b + Math.max(0, 1 - distToTriangle(o.location, spot, post1, post2) / XG.soft), 0);
+}
+export function blockerFactor(b) {
+  return b >= 1 ? XG.perBlocker ** b : XG.keeperOnly ** (1 - b) * XG.perBlocker ** b;
+}
+export function chanceGoal(spot, opponents) {
+  return clamp(baseXg(spot) * blockerFactor(blockerWeight(spot, opponents)), XG.min, XG.max);
 }
 
-// 4. Defenders cut out: outfield opponents strictly between passer and receiver in x. A fact, not an estimate.
+// 4. Defenders cut out: outfield opponents strictly between passer and receiver in x, and involved in the play:
+// within CUT.involved units of the pass. A winger tracking back on the far touchline doesn't count. A fact, not an estimate.
+export const CUT = { involved: 12 };
 export function defendersCutOut(from, to, opponents) {
-  return opponents.filter(o => !o.gk && o.location[0] > from[0] && o.location[0] < to[0]).length;
+  return opponents.filter(o => !o.gk && o.location[0] > from[0] && o.location[0] < to[0]
+    && distToSegment(o.location, from, to) <= CUT.involved).length;
+}
+
+// Where an option is scored. For a ball into space (moment.intoSpace) the played pass is scored where it is received
+// (moment.end), and every other teammate where their own run takes them by the time a ball of the same pace arrives,
+// so the played pass gets no head start. Otherwise every option is scored at the teammate's freeze-frame position.
+export function receptionPoint(moment, p, passer) {
+  if (!moment.intoSpace) return p.location;
+  if (p.player === moment.receiver) return moment.end;
+  const speed = dist(moment.start, moment.end) / (moment.flight || 1);
+  const run = normalizeRun(moment.run && moment.run[p.player]);
+  let spot = p.location;
+  for (let i = 0; i < 4; i++) spot = positionAt(p.location, run, dist(passer.location, spot) / speed);
+  return spot;
 }
 
 // ---- scoring one pass moment -------------------------------------------------
 
 // Scores every teammate of the passer (goalkeeper and the passer excluded) as an option.
-// Each option is scored at its `target`: the teammate's position at the pass. With moment.scoreAtEnd, the played
-// pass is scored at the pass's end location instead (a through ball into space: the event's real reception point).
+// Each option is scored at its `target`, from receptionPoint: the teammate's position at the pass, or for a ball
+// into space where each one would receive it.
 export function scoreOptions(moment) {
   const ff = moment.freeze_frame;
   const passer = ff.find(p => p.player === moment.passer);
@@ -76,7 +111,7 @@ export function scoreOptions(moment) {
     .filter(p => p.teammate && !p.gk && p.player !== moment.passer)
     .map(p => {
       const played = p.player === moment.receiver;
-      const target = played && moment.scoreAtEnd ? moment.end : p.location;
+      const target = receptionPoint(moment, p, passer);
       const arrives = chanceArrives(passer.location, target, opponents, !!moment.aerial);
       const goal = chanceGoal(target, opponents);
       return {

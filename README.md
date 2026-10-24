@@ -50,10 +50,14 @@ At the frozen pass every teammate is an option. Each one gets four numbers:
 
 | Number | Meaning | How |
 |---|---|---|
-| Chance it arrives (**estimated**) | Will the pass reach them? | 0.98 − 0.012 × distance − 0.25 per defender in the lane − 0.15 if a defender is within 3 units of the receiver, clamped 5–98%. Crosses ignore lane defenders. |
-| Chance of a goal (**estimated**) | If it arrives, how dangerous is it? | A logistic on distance and angle to goal, × 0.75 per outfield defender between the receiver and the posts, or × 1.8 when only the keeper is left to beat. Clamped 1–70%. |
+| Chance it arrives (**estimated**) | Will the pass reach them? | 0.98 − 0.012 × distance − 0.25 per defender in the lane − 0.15 if a defender is within 3 units of the receiver, clamped 5–98%. Crosses and lofted balls ignore lane defenders but pay −0.10, since a ball in the air is harder to deliver and control. |
+| Chance of a goal (**estimated**) | If it arrives, how dangerous is it? | A logistic on distance and angle to goal, adjusted for outfield defenders between the receiver and the posts. Each one is a partial blocker: full weight inside that triangle, fading to nothing 1.5 units outside it. With no blockers it is × 1.6 (only the keeper to beat), and × 0.8 per full blocker, changing smoothly in between. Clamped 1–70%. |
 | Expected value (**estimated**) | Risk and reward together | arrives × goal |
-| Defenders cut out (a count) | Opponents the pass goes past | Outfield opponents between the passer and the target, counted from positions |
+| Defenders cut out (a count) | Opponents the pass goes past | Outfield opponents between the passer and the target and within 12 units of the pass, counted from positions |
+
+**Where each option is scored.** Usually at the teammate's position at the moment of the pass. For a ball into space, the pass played
+is scored where it was received, and every other teammate where their own run takes them by the time a ball of the same pace
+would arrive. So the pass played gets no head start over the alternatives.
 
 **Verdict, decided by the numbers in this order (ties go to the pass played):**
 1. **Best option on the pitch**: the played pass had the highest expected value.
