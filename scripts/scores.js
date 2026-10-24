@@ -1,7 +1,7 @@
 // Prints every option's numbers and the verdict for each moment, using the same modules as the page.
 // Run: npm run scores
 import { MOMENTS } from '../src/data.js';
-import { analyseMoment, getVerdictSentence } from '../src/scoring.js';
+import { analyseMoment, buildVerdictPayload, verdictSentence } from '../src/scoring.js';
 import { normalizeRun, positionAt, passPoint, easeBall } from '../src/motion.js';
 
 // Physical checks on the played pass: onside at release, and how close the curved ball comes to any
@@ -33,7 +33,7 @@ function checks(m) {
   };
 }
 
-const intended = ['line', 'best', 'best'];
+const intended = ['line', 'brave', 'best'];
 MOMENTS.forEach((m, i) => {
   const a = analyseMoment(m);
   const ok = a.verdict.key === intended[i] ? 'OK' : '<<< MISMATCH';
@@ -46,7 +46,10 @@ MOMENTS.forEach((m, i) => {
   const others = a.options.filter(o => !o.played);
   const gap = k => a.played[k] - Math.max(...others.map(o => o[k]));
   console.log(`played minus best-other: ev=${(gap('ev') * 100).toFixed(2)}pp goal=${(gap('goal') * 100).toFixed(2)}pp cutOut=${gap('cutOut')}`);
-  console.log(getVerdictSentence(a));
+  const sentence = verdictSentence(buildVerdictPayload(a));
+  const words = sentence.split(/\s+/).length, numbers = (sentence.match(/\d+(\.\d+)?/g) || []).length;
+  console.log(`${sentence}  (${words} words, ${numbers} number${numbers === 1 ? '' : 's'})`);
+  if (words > 20 || numbers > 1) { console.log('<<< sentence too long or has more than one number'); process.exitCode = 1; }
   const c = checks(m);
   console.log(`checks: onside=${c.onside}  nearest-defender=${c.marker}  ball-path clearance=${c.clearance} units (${c.closest})  avg ball speed=${c.avgSpeed} units/s`);
   if (a.verdict.key !== intended[i] || !c.onside || c.clearance < 1.5) process.exitCode = 1;

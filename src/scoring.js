@@ -43,14 +43,19 @@ export function chanceArrives(from, to, opponents, lofted = false) {
   return clamp(p, 0.05, 0.98);
 }
 
-// 2. Chance of a goal from the receiver's spot (0.01 - 0.6): a simple xG. Model estimate.
+// 2. Chance of a goal from the receiver's spot (0.01 - 0.7): a simple xG. Model estimate.
+// The base is a logistic on distance and angle, hand-tuned against reference open-play shots (scripts/calibrate.js).
+// The base already assumes a keeper, so only outfield opponents in the receiver-post-post triangle change it:
+// x0.75 each, or the "only the keeper to beat" boost when there are none.
+export const XG = { a: -0.2, angle: 0.5, dist: 0.095, perBlocker: 0.75, keeperOnly: 1.8, min: 0.01, max: 0.7 };
+export function baseXg(spot) {
+  const z = XG.a + XG.angle * goalAngle(spot) - XG.dist * dist(spot, [GOAL.x, 40]);
+  return 1 / (1 + Math.exp(-z));
+}
 export function chanceGoal(spot, opponents) {
-  const distanceToGoal = dist(spot, [GOAL.x, 40]);
-  const z = -1.2 + 1.5 * goalAngle(spot) - 0.11 * distanceToGoal;
-  const xg = 1 / (1 + Math.exp(-z));
   const post1 = [GOAL.x, GOAL.y1], post2 = [GOAL.x, GOAL.y2];
-  const blockers = opponents.filter(o => inTriangle(o.location, spot, post1, post2)).length;
-  return clamp(xg - 0.03 * blockers, 0.01, 0.6);
+  const blockers = opponents.filter(o => !o.gk && inTriangle(o.location, spot, post1, post2)).length;
+  return clamp(baseXg(spot) * (blockers ? XG.perBlocker ** blockers : XG.keeperOnly), XG.min, XG.max);
 }
 
 // 4. Defenders cut out: outfield opponents strictly between passer and receiver in x. A fact, not an estimate.
@@ -116,36 +121,47 @@ export function analyseMoment(moment) {
 export function fmtPct(p) {
   return (p < 0.1 ? (p * 100).toFixed(1) : Math.round(p * 100)) + '%';
 }
-export function describeChance(p) {
-  return p <= 0.5 ? `1-in-${Math.round(1 / p)}` : fmtPct(p);
-}
+// The facts the verdict sentence may use: the same JSON body the browser will POST to /api/verdict (Azure OpenAI,
+// next step), so the model and this template see exactly the same numbers.
+const VERDICT_IDS = { best: 'best_option', brave: 'brave_pass', line: 'line_breaker', timing: 'perfect_timing' };
+const round = (v, n = 2) => +v.toFixed(n);
+const facts = (o, label) => ({ label, arrives: round(o.arrives), goal: round(o.goal), value: round(o.ev, 3), cut_out: o.cutOut });
 
-// TODO(next step): this function will be replaced by an Azure OpenAI call that receives the same
-// `analysis` object and must write its sentence using only these numbers.
-// For now it is a plain template, so the page labels it "auto-generated from the numbers".
-export function getVerdictSentence(analysis) {
+export function buildVerdictPayload(analysis) {
   const { options, played, verdict } = analysis;
   const others = options.filter(o => !o.played);
-  const best = (arr, key) => arr.reduce((a, b) => (b[key] > a[key] ? b : a));
+  const next = others.reduce((a, b) => (b.ev > a.ev ? b : a));
+  const safe = others.reduce((a, b) => (b.arrives > a.arrives ? b : a));
+  return {
+    verdict: VERDICT_IDS[verdict.key],
+    played: facts(played, `Pass to ${played.player}`),
+    next_best: facts(next, `Pass to ${next.player}`),
+    safe: facts(safe, `Safe pass to ${safe.player}`),
+    value_ratio_vs_next_best: round(played.ev / next.ev),
+  };
+}
 
-  if (verdict.key === 'best') {
-    const next = best(others, 'ev');
-    return `${verdict.label}: a ${fmtPct(played.arrives)} chance it arrives and a ${fmtPct(played.goal)} chance of a goal ` +
-           `gave the highest expected value (${fmtPct(played.ev)}) of all ${options.length} options, ahead of the next best at ${fmtPct(next.ev)}.`;
-  }
-  if (verdict.key === 'brave') {
-    // compared with the best alternative (highest expected value), so the ratio is meaningful
-    const alt = best(others, 'ev');
-    const ratio = played.goal / alt.goal;
-    const reward = ratio < 1.15 ? 'a higher goal chance than'
-      : Math.abs(ratio - 2) < 0.05 ? 'double the goal chance of'
-      : `${ratio.toFixed(1)}× the goal chance of`;
-    return `${verdict.label}: a ${describeChance(played.arrives)} chance it arrives, but ${reward} the best alternative (${fmtPct(alt.goal)}), and it paid off.`;
-  }
-  if (verdict.key === 'line') {
-    const most = Math.max(...others.map(o => o.cutOut));
-    const compare = played.cutOut > most ? 'more than any other option' : 'as many as any other option';
-    return `${verdict.label}: one pass cut out ${played.cutOut} defenders, ${compare}, with a ${fmtPct(played.arrives)} chance of arriving.`;
-  }
-  return `${verdict.label}: a ${fmtPct(played.arrives)} chance it arrives and a ${fmtPct(played.goal)} chance of a goal, and the pass found its player.`;
+// plain-language comparisons, so the sentence needs at most one number
+export function ratioWords(r) {
+  if (r >= 5.5) return 'over five times';
+  if (r >= 2.5) { const n = Math.round(r); return `${r < n - 0.05 ? 'nearly' : r > n + 0.05 ? 'over' : 'about'} ${['three', 'four', 'five'][n - 3]} times`; }
+  if (r >= 1.8) return 'about twice';
+  if (r >= 1.3) return 'half as much again as';
+  return 'more than';
+}
+export function arriveWords(p) {
+  if (p < 0.25) return 'a long shot to arrive';
+  if (p < 0.45) return 'less than a coin flip to arrive';
+  if (p < 0.6) return 'about a coin flip to arrive';
+  return 'riskier than the safe ball';
+}
+
+// The template verdict sentence: one line, at most 20 words and one number, built only from the payload.
+// It is the fallback when Azure OpenAI is unavailable (and, until that lands, the only source).
+export function verdictSentence(payload) {
+  const { verdict, played, value_ratio_vs_next_best: r } = payload;
+  if (verdict === 'best_option') return `Best option on the pitch: ${ratioWords(r)} the value of the next best pass.`;
+  if (verdict === 'brave_pass') return `The brave pass: ${arriveWords(played.arrives)}, for the biggest goal chance on the pitch.`;
+  if (verdict === 'line_breaker') return `Line-breaker: one pass took ${played.cut_out} defenders out of the game, more than any other option.`;
+  return 'Perfect timing: the pass found its player at exactly the right moment.';
 }

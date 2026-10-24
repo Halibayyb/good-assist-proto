@@ -10,9 +10,22 @@
   <h1>The Decision Behind the Assist</h1>
   <p class="sub">Every broadcast shows the goal. We show the decision that made it possible.</p>
 
+  <div class="live" id="live">
+    <button class="live-btn" id="liveBtn" type="button">▶ Start live match</button>
+    <span class="clock" id="clock" aria-label="Match clock">0'</span>
+    <span class="score" id="score">Home 0 – 0 Away</span>
+    <div class="progress" aria-hidden="true"><div id="progress"></div></div>
+  </div>
+
+  <p class="jump">Jump to goal</p>
   <div class="picker" id="picker"></div>
 
   <div class="stage">
+    <div class="views" id="views">
+    <div class="view-toggle" role="group" aria-label="View">
+      <button type="button" data-view="broadcast" aria-pressed="true">Broadcast view</button>
+      <button type="button" data-view="analyst" aria-pressed="false">Analyst view</button>
+    </div>
     <div class="pitch-wrap">
       <svg id="pitch" viewBox="0 0 1000 600" role="img" aria-label="Perspective view of the attacking end with all outfield players frozen at the moment of the pass">
         <defs>
@@ -140,9 +153,36 @@
       <div id="tip" role="status"></div>
     </div>
 
+    <figure class="map-wrap" id="mapWrap">
+      <div class="map-row">
+      <div class="roster" id="roster" aria-label="Players in both teams"></div>
+      <svg id="nodeMap" viewBox="-3 -3 126 86" role="img" aria-label="Top-down node map of every player from both teams, moving on the same clock as the replay">
+        <defs>
+          <marker id="map-head" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+            <path d="M0,0 L10,5 L0,10 z" fill="#1f2430"/>
+          </marker>
+          <marker id="map-head-air" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="3.2" markerHeight="3.2" orient="auto">
+            <path d="M0,0 L10,5 L0,10 z" fill="#1f2430"/>
+          </marker>
+          <marker id="map-head-opt" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+            <path d="M0,0 L10,5 L0,10 z" fill="#4b5563"/>
+          </marker>
+        </defs>
+        <g id="mapTurf"></g>       <!-- top-down markings, drawn once in main.js -->
+        <g id="mapLinks"></g>      <!-- pass options, added on the reveal -->
+        <polyline id="mapTrail" fill="none" stroke="#1f2430" stroke-width=".35" stroke-opacity=".45" stroke-dasharray="1 1" stroke-linejoin="round"/>
+        <circle id="mapBall" r=".85" fill="#fff" stroke="#1f2430" stroke-width=".3"/>   <!-- under the nodes so it never hides a shirt number -->
+        <g id="mapNodes"></g>
+      </svg>
+      </div>
+      <figcaption>Node map: all 22 players from above, on the same clock as the replay. Dark = Home, white = Away.</figcaption>
+    </figure>
+    </div>
+
     <aside class="panel">
       <button class="play-btn" id="playBtn" type="button">▶ Play the moment</button>
       <p id="status"></p>
+      <ol class="ticker" id="ticker" aria-live="polite" aria-label="Match events"></ol>
       <div id="result"></div>
     </aside>
   </div>
